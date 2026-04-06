@@ -136,7 +136,10 @@ def run_vggt(image_paths: list[str], device: str = "cuda"):
     print(f"Preprocessing {len(image_paths)} images for VGGT...")
     images = load_and_preprocess_images(image_paths).to(device)  # (S, 3, H, W)
 
-    dtype = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
+    try:
+        dtype = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
+    except RuntimeError:
+        dtype = torch.float16
     print("Running VGGT inference...")
     with torch.no_grad():
         with torch.cuda.amp.autocast(dtype=dtype):
@@ -227,7 +230,10 @@ def refine_features_with_tracking(
 
     query_tensor = torch.from_numpy(query_pts).unsqueeze(0).to(device)  # (1, N, 2)
 
-    dtype = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
+    try:
+        dtype = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
+    except RuntimeError:
+        dtype = torch.float16
     print(f"Running tracking head on {len(query_pts)} query points across {S} frames...")
 
     with torch.no_grad():

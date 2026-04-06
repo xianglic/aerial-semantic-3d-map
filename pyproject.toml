@@ -5,13 +5,18 @@ description = "3D point cloud semantic segmentation using OpenCLIP + VGGT"
 requires-python = ">=3.10"
 dependencies = [
     "open-clip-torch>=2.29.0",
-    "torch>=2.0",
-    "torchvision",
+    "torch==2.5.1",
+    "torchvision==0.20.1",
     "numpy<2",
     "Pillow",
     "tqdm",
     "vggt",
+    "torchaudio==2.5.1",
+    "open3d>=0.19.0",
 ]
 
 [tool.uv.sources]
 vggt = { path = "../VGGT", editable = true }
+
+[[tool.uv.index]]
+url = "https://download.pytorch.org/whl/cu124"
