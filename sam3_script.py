@@ -33,12 +33,12 @@ def parse_args():
     )
     parser.add_argument(
         "--output",
-        default="masks_overlay.png",
+        default="./output/masks_overlay.png",
         help="Path to save colored mask overlay",
     )
     parser.add_argument(
         "--preview",
-        default="masks_preview.png",
+        default="./output/masks_preview.png",
         help="Path to save matplotlib preview",
     )
     parser.add_argument(

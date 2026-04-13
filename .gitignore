@@ -12,3 +12,5 @@ wheels/
 
 
 output/
+vggt_output/
+seg3d/
