@@ -3,8 +3,8 @@ import sys
 
 path = "./output/"
 dir_name = sys.argv[1]
-seg = o3d.io.read_point_cloud(path + dir_name + "/segmented_object.ply")
-scn = o3d.io.read_point_cloud(path + dir_name + "/scene_context.ply")
+seg = o3d.io.read_point_cloud(path + dir_name + "segmented_object.ply")
+scn = o3d.io.read_point_cloud(path + dir_name + "scene_context.ply")
 
 print("seg points:", len(seg.points), "has colors:", seg.has_colors())
 print("scn points:", len(scn.points), "has colors:", scn.has_colors())
