@@ -26,7 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--frame-glob", help="Optional glob for original images. If omitted, uses image_paths stored in predictions.npz.")
     parser.add_argument("--use-depth-world-points", action="store_true", help="Use world_points_from_depth instead of world_points.")
     parser.add_argument("--sam-threshold", type=float, default=0.7, help="Instance segmentation confidence threshold.")
-    parser.add_argument("--point-conf-threshold", type=float, default=0.5, help="VGGT point confidence threshold.")
+    parser.add_argument("--point-conf-threshold", type=float, default=0.3, help="VGGT point confidence threshold (applied to normalized [0,1] conf scores; 0.3 ≈ top 70%%).")
     parser.add_argument("--out-dir", default="seg3d_output", help="Output directory.")
     parser.add_argument("--save-per-frame-overlay", action="store_true", help="Save 2D mask overlay for each frame.")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging.")
@@ -41,10 +41,14 @@ def load_predictions(predictions_path: str, use_depth_world_points: bool) -> dic
         if key not in data:
             raise KeyError(f"Missing key {key!r} in {predictions_path}")
 
+    conf = np.array(data["world_points_conf"])
+    conf_min, conf_max = conf.min(), conf.max()
+    conf = (conf - conf_min) / (conf_max - conf_min + 1e-8)
+
     return {
         "point_key": point_key,
         "world_points": data[point_key],
-        "world_points_conf": data["world_points_conf"],
+        "world_points_conf": conf,
         "image_paths": [str(p) for p in data["image_paths"].tolist()],
     }
 
@@ -110,11 +114,12 @@ def lift_mask_to_3d_points(
     point_map: np.ndarray,
     point_conf: np.ndarray,
     conf_thresh: float,
-) -> np.ndarray:
+) -> tuple[np.ndarray, int, int]:
+    """Returns (points, n_raw_masked, n_conf_passing)."""
     pts = point_map[mask]
     conf = point_conf[mask]
     valid = np.isfinite(pts).all(axis=1) & (conf >= conf_thresh)
-    return pts[valid]
+    return pts[valid], len(pts), int(valid.sum())
 
 
 def build_scene_cloud(
@@ -159,14 +164,50 @@ def main() -> None:
     frame_paths = resolve_frame_paths(preds["image_paths"], args.frame_glob)
 
     num_frames, H, W, _ = world_points.shape
-    logger.info("Point source: %s | grid: H=%d W=%d", preds["point_key"], H, W)
+
+    # Squeeze trailing dim if VGGT emitted (S, H, W, 1)
+    if world_points_conf.ndim == 4 and world_points_conf.shape[-1] == 1:
+        world_points_conf = world_points_conf.squeeze(-1)
+    if world_points_conf.shape != (num_frames, H, W):
+        raise ValueError(
+            f"Unexpected world_points_conf shape {world_points_conf.shape}, "
+            f"expected ({num_frames}, {H}, {W})"
+        )
+
+    conf_flat = world_points_conf.ravel()
+    print(
+        f"world_points_conf: shape={world_points_conf.shape} | "
+        f"min={conf_flat.min():.4f} max={conf_flat.max():.4f} mean={conf_flat.mean():.4f} | "
+        f"p50={np.percentile(conf_flat, 50):.4f} p75={np.percentile(conf_flat, 75):.4f} "
+        f"p90={np.percentile(conf_flat, 90):.4f} p95={np.percentile(conf_flat, 95):.4f}"
+    )
+
+    vggt_pixels_per_frame = H * W
+    print(f"VGGT grid: {H}x{W} = {vggt_pixels_per_frame:,} points/frame | "
+          f"{num_frames} frames | {vggt_pixels_per_frame * num_frames:,} total raw points")
+
+    # Global confidence stats across all frames (before any masking)
+    total_raw = vggt_pixels_per_frame * num_frames
+    conf_pass_global = int((np.isfinite(world_points).all(axis=-1) &
+                            (world_points_conf >= args.point_conf_threshold)).sum())
+    print(f"Global conf>={args.point_conf_threshold}: {conf_pass_global:,} / {total_raw:,} "
+          f"({100*conf_pass_global/total_raw:.1f}%)")
 
     processor, model = load_sam3(args.sam_model, device)
     merged_object_points = []
 
+    total_image_pixels = 0
+    total_mask_pixels_orig = 0
+    total_mask_pixels_vggt = 0
+    total_raw_masked = 0
+    total_conf_passing = 0
+
     for k in range(num_frames):
         image = Image.open(frame_paths[k]).convert("RGB")
         image_np = np.array(image)
+        H_orig, W_orig = image_np.shape[:2]
+        image_pixels = H_orig * W_orig
+        total_image_pixels += image_pixels
 
         mask_items = run_sam3_on_image(
             image_pil=image,
@@ -179,32 +220,68 @@ def main() -> None:
 
         valid_masks = [item for item in mask_items if item["area"] > 0]
         if not valid_masks:
-            logger.info("[%03d] no valid mask", k)
+            print(f"[{k:03d}] image={H_orig}x{W_orig} ({image_pixels:,} px) | no valid mask")
             continue
 
         frame_pts = []
-        union_mask = np.zeros((image_np.shape[0], image_np.shape[1]), dtype=bool)
+        union_mask_orig = np.zeros((H_orig, W_orig), dtype=bool)
+        union_mask_vggt = np.zeros((H, W), dtype=bool)
+        frame_raw_masked = 0
+        frame_conf_passing = 0
+
         for item in valid_masks:
             mask = item["mask"]
             mask_for_vggt = (
                 cv2.resize(mask.astype(np.uint8), (W, H), interpolation=cv2.INTER_NEAREST).astype(bool)
                 if mask.shape != (H, W) else mask
             )
-            pts = lift_mask_to_3d_points(
+            pts, n_raw, n_conf = lift_mask_to_3d_points(
                 mask=mask_for_vggt,
                 point_map=world_points[k],
                 point_conf=world_points_conf[k],
                 conf_thresh=args.point_conf_threshold,
             )
+            frame_raw_masked += n_raw
+            frame_conf_passing += n_conf
             if len(pts) > 0:
                 frame_pts.append(pts)
-            union_mask |= mask
+            union_mask_orig |= mask
+            union_mask_vggt |= mask_for_vggt
 
-        logger.info("[%03d] %d masks -> %d 3D points", k, len(valid_masks), sum(len(p) for p in frame_pts))
+        mask_px_orig = int(union_mask_orig.sum())
+        mask_px_vggt = int(union_mask_vggt.sum())
+        total_mask_pixels_orig += mask_px_orig
+        total_mask_pixels_vggt += mask_px_vggt
+        total_raw_masked += frame_raw_masked
+        total_conf_passing += frame_conf_passing
+
+        pct_img = 100 * mask_px_orig / image_pixels if image_pixels else 0
+        pct_conf = 100 * frame_conf_passing / frame_raw_masked if frame_raw_masked else 0
+        print(
+            f"[{k:03d}] image={H_orig}x{W_orig} ({image_pixels:,} px) | "
+            f"mask_orig={mask_px_orig:,} ({pct_img:.1f}%) | "
+            f"mask_vggt={mask_px_vggt:,} | "
+            f"raw_masked={frame_raw_masked:,} | "
+            f"conf_pass={frame_conf_passing:,} ({pct_conf:.1f}%) | "
+            f"3d_pts={sum(len(p) for p in frame_pts):,}"
+        )
         merged_object_points.extend(frame_pts)
 
         if args.save_per_frame_overlay:
-            Image.fromarray(make_overlay(image_np, union_mask)).save(out_dir / f"overlay_{k:03d}.png")
+            Image.fromarray(make_overlay(image_np, union_mask_orig)).save(out_dir / f"overlay_{k:03d}.png")
+
+    print(
+        f"\n=== Summary ===\n"
+        f"  Image pixels total   : {total_image_pixels:,} ({total_image_pixels // num_frames:,}/frame)\n"
+        f"  VGGT raw points total: {total_raw:,} ({vggt_pixels_per_frame:,}/frame)\n"
+        f"  Global conf passing  : {conf_pass_global:,} ({100*conf_pass_global/total_raw:.1f}% of raw)\n"
+        f"  Union mask (orig res): {total_mask_pixels_orig:,} px across all frames\n"
+        f"  Union mask (vggt res): {total_mask_pixels_vggt:,} px across all frames\n"
+        f"  Masked raw points    : {total_raw_masked:,}\n"
+        f"  Masked conf passing  : {total_conf_passing:,} "
+        f"({100*total_conf_passing/total_raw_masked:.1f}% of masked raw)"
+        if total_raw_masked else "  Masked conf passing  : 0"
+    )
 
     if not merged_object_points:
         raise RuntimeError("No 3D points extracted from any frame.")
