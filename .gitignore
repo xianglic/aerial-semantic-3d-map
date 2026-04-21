@@ -1,16 +1,26 @@
-# Python-generated files
+# Python
 __pycache__/
 *.py[oc]
+*.egg-info
+
+# Virtual environment
+.venv
+
+# UV
+uv.lock
+
+# Build artifacts
 build/
 dist/
 wheels/
-*.egg-info
+bfs_expand
 
+# Editor
+*.py~
+.*.py.un~
+.*.swp
 
-# Virtual environments
-.venv
-
-
+# Output dirs
 output/
 vggt_output/
 seg3d_output/

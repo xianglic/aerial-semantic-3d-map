@@ -1,0 +1,19 @@
+input:
+  mode: load                                 # load | inference
+  path: seg3d_output/predictions/preds.npz  # predictions.npz if load; image folder if inference
+  point_conf_threshold: 0.05
+
+segmentation:
+  text_prompt: "sports field"
+  sam_threshold: 0.7
+
+filling:
+  enabled: true 
+  radius: 0.5
+  color_thresh: 0.05
+  max_iters: 20
+  backend: cpp                       # cpp (fast, requires build_bfs.sh) or python
+
+output:
+  out_dir: output 
+  verbose: true
