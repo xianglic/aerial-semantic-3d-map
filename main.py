@@ -36,7 +36,18 @@ def resolve_config(args: argparse.Namespace) -> dict:
     cfg = load_config(args.config)
     if args.verbose:
         cfg["output"]["verbose"] = True
-    return cfg
+
+    # Substitute {out_dir} in all string values
+    out_dir = cfg["output"]["out_dir"]
+    def _substitute(obj):
+        if isinstance(obj, str):
+            return obj.replace("{out_dir}", out_dir)
+        if isinstance(obj, dict):
+            return {k: _substitute(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [_substitute(v) for v in obj]
+        return obj
+    return _substitute(cfg)
 
 
 def main() -> None:
@@ -58,7 +69,7 @@ def main() -> None:
         d.mkdir(parents=True, exist_ok=True)
 
     import torch
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = cfg["output"].get("device", "cuda:0" if torch.cuda.is_available() else "cpu")
 
     inp = cfg["input"]
 
@@ -70,7 +81,7 @@ def main() -> None:
         preds = load_predictions(path)
     elif mode == "inference":
         save_path = predictions_dir / "preds.npz"
-        preds = run_vggt_inference(image_folder=path, model_url=VGGT_MODEL_URL, save_path=str(save_path))
+        preds = run_vggt_inference(image_folder=path, model_url=VGGT_MODEL_URL, device=device, save_path=str(save_path))
         logger.info("Saved VGGT predictions to %s", save_path)
     else:
         raise ValueError(f"input.mode must be 'load' or 'inference', got {mode!r}")

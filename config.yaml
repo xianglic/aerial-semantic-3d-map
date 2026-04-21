@@ -1,6 +1,13 @@
+output:
+  out_dir: output
+  device: cuda:1 # cuda:0 | cuda:1 | cpu
+  verbose: true
+
 input:
   mode: load                                 # load | inference
-  path: seg3d_output/predictions/preds.npz  # predictions.npz if load; image folder if inference
+  path: "{out_dir}/predictions/preds.npz"  # predictions.npz if load; image folder if inference
+  # mode: inference
+  # path: ../stream/cmu_selected
   point_conf_threshold: 0.05
 
 segmentation:
@@ -9,11 +16,8 @@ segmentation:
 
 filling:
   enabled: true 
-  radius: 0.5
+  radius: 0.03
   color_thresh: 0.05
   max_iters: 20
   backend: cpp                       # cpp (fast, requires build_bfs.sh) or python
 
-output:
-  out_dir: output 
-  verbose: true

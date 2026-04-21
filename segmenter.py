@@ -34,13 +34,12 @@ def load_predictions(predictions_path: str) -> dict:
 def run_vggt_inference(
     image_folder: str,
     model_url: str,
+    device: str,
     save_path: str = None,
 ) -> dict:
     from vggt.models.vggt import VGGT
     from vggt.utils.load_fn import load_and_preprocess_images
     from vggt.utils.pose_enc import pose_encoding_to_extri_intri
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
 
     logger.info("Loading VGGT model...")
     model = VGGT()
@@ -54,7 +53,7 @@ def run_vggt_inference(
     logger.info("Running VGGT inference...")
     dtype = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
     with torch.no_grad():
-        with torch.cuda.amp.autocast(dtype=dtype):
+        with torch.amp.autocast(device, dtype=dtype):
             predictions = model(images_tensor)
 
     extrinsic, intrinsic = pose_encoding_to_extri_intri(predictions["pose_enc"], images_tensor.shape[-2:])
@@ -253,7 +252,7 @@ class Segmenter:
             {"index": i,
              "mask": np.asarray(m.detach().cpu() if isinstance(m, torch.Tensor) else m).astype(bool),
              "score": float(scores[i]) if scores is not None else 0.0,
-             "area": int(np.asarray(m).sum())}
+             "area": int(m.detach().cpu().sum() if isinstance(m, torch.Tensor) else np.asarray(m).sum())}
             for i, m in enumerate(masks)
         ]
 
