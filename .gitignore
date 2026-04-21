@@ -20,6 +20,9 @@ bfs_expand
 .*.py.un~
 .*.swp
 
+# Example scripts
+example_scripts/
+
 # Output dirs
 output/
 vggt_output/
