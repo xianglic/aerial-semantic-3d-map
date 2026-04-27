@@ -100,6 +100,7 @@ class Filler:
         header = (
             np.int64(N).tobytes() +
             np.int64(len(seed_indices)).tobytes() +
+            np.int64(self.max_iters).tobytes() +
             np.float64(self.radius).tobytes() +
             np.float64(self.color_thresh).tobytes() +
             np.float64(ref_color[0]).tobytes() +

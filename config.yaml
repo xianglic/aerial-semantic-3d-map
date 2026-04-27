@@ -18,6 +18,6 @@ filling:
   enabled: true 
   radius: 0.03
   color_thresh: 0.05
-  max_iters: 20
+  max_iters: 4
   backend: cpp                       # cpp (fast, requires build_bfs.sh) or python
 

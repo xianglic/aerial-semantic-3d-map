@@ -3,7 +3,7 @@
 // the full adjacency graph over all 5M points.
 //
 // Binary protocol (stdin -> stdout):
-//   IN:  int64 N, int64 n_seeds, float64 radius, float64 color_thresh,
+//   IN:  int64 N, int64 n_seeds, int64 max_iters, float64 radius, float64 color_thresh,
 //        float64[3] ref_color, float32[N*6] xyzrgb, int32[n_seeds] seed_indices
 //   OUT: int64 n_result, int32[n_result] result_indices
 
@@ -108,16 +108,16 @@ template<typename T> void write_arr(const T* b, size_t n)  { fwrite(b, sizeof(T)
 // Main
 // ---------------------------------------------------------------------------
 int main() {
-    int64_t N, n_seeds;
+    int64_t N, n_seeds, max_iters;
     double radius_d, color_thresh_d, ref_r, ref_g, ref_b;
-    read_val(N); read_val(n_seeds);
+    read_val(N); read_val(n_seeds); read_val(max_iters);
     read_val(radius_d); read_val(color_thresh_d);
     read_val(ref_r); read_val(ref_g); read_val(ref_b);
 
     float radius       = (float)radius_d;
     float color_thresh = (float)color_thresh_d;
-    float ref[3]       = { (float)ref_r, (float)ref_g, (float)ref_b };
     float ct2          = color_thresh * color_thresh;
+    (void)ref_r; (void)ref_g; (void)ref_b;
 
     std::vector<float> pts_buf(N * 6);
     read_arr(pts_buf.data(), N * 6);
@@ -126,8 +126,8 @@ int main() {
     std::vector<vertex> seeds_vec(n_seeds);
     read_arr(seeds_vec.data(), n_seeds);
 
-    fprintf(stderr, "BFS: N=%ld seeds=%ld radius=%.4f color_thresh=%.4f\n",
-            (long)N, (long)n_seeds, radius, color_thresh);
+    fprintf(stderr, "BFS: N=%ld seeds=%ld radius=%.4f color_thresh=%.4f max_iters=%ld\n",
+            (long)N, (long)n_seeds, radius, color_thresh, (long)max_iters);
 
     // Build grid
     fprintf(stderr, "BFS: building grid...\n");
@@ -153,14 +153,15 @@ int main() {
     fprintf(stderr, "BFS: initial frontier %zu boundary seeds\n", frontier.size());
 
     int iteration = 0;
-    while (frontier.size() > 0) {
+    while (frontier.size() > 0 && iteration < (int)max_iters) {
         auto next_seqs = parlay::map(frontier, [&](vertex u) {
             auto nbrs = grid.neighbors(pts, u, radius);
+            // Local gate: v must be color-similar to its frontier neighbor u
             return parlay::filter(nbrs, [&](vertex v) {
                 if (visited[v].load(std::memory_order_relaxed)) return false;
-                float dr = pts[v*6+3] - ref[0];
-                float dg = pts[v*6+4] - ref[1];
-                float db = pts[v*6+5] - ref[2];
+                float dr = pts[v*6+3] - pts[u*6+3];
+                float dg = pts[v*6+4] - pts[u*6+4];
+                float db = pts[v*6+5] - pts[u*6+5];
                 if (dr*dr + dg*dg + db*db >= ct2) return false;
                 bool expected = false;
                 return visited[v].compare_exchange_strong(expected, true);
