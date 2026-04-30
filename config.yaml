@@ -4,20 +4,21 @@ output:
   verbose: true
 
 input:
-  mode: load                                 # load | inference
-  path: "{out_dir}/predictions/preds.npz"  # predictions.npz if load; image folder if inference
-  # mode: inference
-  # path: ../stream/cmu_selected
+  mode: fill_only      # full | seg_fill | fill_only
+  # path: "../stream/cmu_selected"
+  path: "{out_dir}/construction/construction.npz"  # image folder if full; construction.npz if seg_fill; unused if fill_only
+
+construction:
   point_conf_threshold: 0.05
 
 segmentation:
   text_prompt: "sports field"
-  sam_threshold: 0.7
+  sam_threshold: 0.8
 
 filling:
-  enabled: true 
+  enabled: true
   radius: 0.03
   color_thresh: 0.05
   max_iters: 4
-  backend: cpp                       # cpp (fast, requires build_bfs.sh) or python
-
+  backend: python           
+  downsample: false
