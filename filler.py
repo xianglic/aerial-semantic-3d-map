@@ -16,7 +16,6 @@ BFS_BINARY = Path(__file__).parent / "bfs_expand"
 
 
 def build_scene_index(world_points: np.ndarray, images: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Flatten all valid world points and colors from all frames into flat arrays."""
     colors_hwc = images.transpose(0, 2, 3, 1)
     pts_list, colors_list = [], []
     for k in range(world_points.shape[0]):
@@ -30,13 +29,6 @@ def build_scene_index(world_points: np.ndarray, images: np.ndarray) -> tuple[np.
 
 
 class Filler:
-    """BFS hole filling on a 3D point cloud using radius + color similarity.
-
-    Supports two backends:
-      - "cpp": Parlay parallel C++ binary (fast). Build with: bash build_bfs.sh
-      - "python": pure-Python BFS on a voxel-downsampled scene (no build needed).
-    """
-
     def __init__(
         self,
         radius: float,
@@ -62,7 +54,6 @@ class Filler:
         world_points: np.ndarray,
         images: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Run BFS hole filling. Returns (expanded_points, expanded_colors)."""
         seed_pts = np.concatenate(merged_object_points)
         seed_colors = np.concatenate(merged_object_colors)
         scene_pts, scene_colors = build_scene_index(world_points, images)
@@ -83,7 +74,6 @@ class Filler:
     # ---- Scene preparation ----
 
     def _prepare_scene(self, scene_pts, scene_colors):
-        """Return (work_pts, work_colors, full_to_work), voxel-downsampled if enabled."""
         if self.downsample:
             bbox = scene_pts.max(axis=0) - scene_pts.min(axis=0)
             bbox_volume = max(float(np.prod(bbox)), 1e-12)
@@ -156,40 +146,54 @@ class Filler:
         t = time.perf_counter()
         _, seed_idx = tree.query(seed_pts, k=1)
         seed_idx = np.unique(seed_idx)
-        logger.info("python BFS: seed mapping done in %.2fs → %d unique indices", time.perf_counter() - t, len(seed_idx))
+        logger.info("python BFS: seed mapping done in %.2fs → %d unique indices",
+                    time.perf_counter() - t, len(seed_idx))
 
         in_set[seed_idx] = True
-        ref_color = seed_colors.mean(axis=0)
-
         frontier = seed_idx
         logger.info("python BFS: initial frontier %d pts", len(frontier))
+
+        color_thresh2 = self.color_thresh * self.color_thresh
 
         for iteration in range(self.max_iters):
             if len(frontier) == 0:
                 break
-            logger.info("python BFS iter %d: query_ball_point on %d frontier pts...", iteration + 1, len(frontier))
-            t = time.perf_counter()
-            neighbor_lists = tree.query_ball_point(work_pts[frontier], r=self.radius, workers=-1)
-            logger.info("python BFS iter %d: query_ball_point done in %.2fs", iteration + 1, time.perf_counter() - t)
+
+            logger.info("python BFS iter %d: sequential query_ball_point on %d frontier pts...",
+                        iteration + 1, len(frontier))
 
             t = time.perf_counter()
-            candidates = np.unique(np.concatenate(neighbor_lists).astype(np.intp))
-            candidates = candidates[~in_set[candidates]]
-            logger.info("python BFS iter %d: candidate dedup done in %.2fs → %d candidates", iteration + 1, time.perf_counter() - t, len(candidates))
+            next_frontier = []
 
-            if len(candidates) == 0:
-                break
-            accepted = candidates[np.linalg.norm(work_colors[candidates] - ref_color, axis=1) < self.color_thresh]
-            in_set[accepted] = True
-            frontier = accepted
-            logger.info("python BFS iter %d: accepted=%d total_in_set=%d",
-                        iteration + 1, len(accepted), int(in_set.sum()))
+            for i, u in enumerate(frontier):
+                neighbors = tree.query_ball_point(work_pts[u], r=self.radius)
+
+                for v in neighbors:
+                    if in_set[v]:
+                        continue
+
+                    diff = work_colors[v] - work_colors[u]
+                    if float(np.dot(diff, diff)) < color_thresh2:
+                        in_set[v] = True
+                        next_frontier.append(v)
+
+                if (i + 1) % 50000 == 0:
+                    logger.info("python BFS iter %d: scanned %d/%d → next_frontier=%d",
+                                iteration + 1, i + 1, len(frontier), len(next_frontier))
+
+            frontier = np.array(next_frontier, dtype=np.intp)
+
+            logger.info("python BFS iter %d: done in %.2fs accepted=%d total_in_set=%d",
+                        iteration + 1, time.perf_counter() - t,
+                        len(frontier), int(in_set.sum()))
 
         logger.info("python BFS: collecting result mask...")
         t = time.perf_counter()
         in_set_idx = np.where(in_set)[0]
         full_mask = np.isin(full_to_work, in_set_idx)
-        logger.info("python BFS done in %.2fs: %d work pts → %d full-density pts", time.perf_counter() - t, len(in_set_idx), int(full_mask.sum()))
+        logger.info("python BFS done in %.2fs: %d work pts → %d full-density pts",
+                    time.perf_counter() - t, len(in_set_idx), int(full_mask.sum()))
+
         return scene_pts[full_mask], scene_colors[full_mask]
 
     @staticmethod

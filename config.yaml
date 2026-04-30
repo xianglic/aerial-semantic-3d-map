@@ -20,5 +20,5 @@ filling:
   radius: 0.03
   color_thresh: 0.05
   max_iters: 4
-  backend: python           
+  backend: cpp           
   downsample: false

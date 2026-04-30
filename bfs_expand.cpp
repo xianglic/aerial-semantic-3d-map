@@ -80,9 +80,6 @@ struct Grid {
             if (i == 0 || ids[sorted[i]] != ids[sorted[i-1]])
                 offsets[ids[sorted[i]]] = i;
         });
-        // Backward fill: for each empty cell (sentinel N), propagate the nearest
-        // populated offset from the right. Parallel via suffix scan: reverse,
-        // scan with "keep left if set, else take right" monoid, then write back.
         auto sentinel = (int32_t)N;
         auto rev = parlay::tabulate(total_cells + 1, [&](int64_t i) {
             return offsets[total_cells - i];
@@ -176,35 +173,29 @@ int main() {
 
     parlay::sequence<vertex> frontier(seeds_vec.begin(), seeds_vec.end());
 
-    // Collect per-iteration frontiers; flatten once at the end
     parlay::sequence<parlay::sequence<vertex>> all_frontiers;
     all_frontiers.push_back(parlay::sequence<vertex>(seeds_vec.begin(), seeds_vec.end()));
 
-    // Initial frontier: only boundary seeds (those with unvisited neighbors)
-    fprintf(stderr, "BFS: computing boundary of %zu seeds...\n", frontier.size());
-    auto is_boundary = parlay::map(frontier, [&](vertex u) {
-        for (vertex v : grid.neighbors(buf, u, radius))
-            if (!visited[v].load(std::memory_order_relaxed)) return true;
-        return false;
-    });
-    frontier = parlay::pack(frontier, is_boundary);
-    fprintf(stderr, "BFS: initial frontier %zu boundary seeds\n", frontier.size());
+    fprintf(stderr, "BFS: initial frontier %zu seeds\n", frontier.size());
 
     int iteration = 0;
     while (frontier.size() > 0 && iteration < (int)max_iters) {
         auto next_seqs = parlay::map(frontier, [&](vertex u) {
             auto nbrs = grid.neighbors(buf, u, radius);
-            return parlay::filter(nbrs, [&](vertex v) {
-                if (visited[v].load(std::memory_order_relaxed)) return false;
+            parlay::sequence<vertex> accepted;
+            for (vertex v : nbrs) {
+                if (visited[v].load(std::memory_order_relaxed)) continue;
                 const Point& pv = pt(buf, v);
                 const Point& pu = pt(buf, u);
                 float dr = pv.r - pu.r;
                 float dg = pv.g - pu.g;
                 float db = pv.b - pu.b;
-                if (dr*dr + dg*dg + db*db >= ct2) return false;
+                if (dr*dr + dg*dg + db*db >= ct2) continue;
                 bool expected = false;
-                return visited[v].compare_exchange_strong(expected, true);
-            });
+                if (visited[v].compare_exchange_strong(expected, true))
+                    accepted.push_back(v);
+            }
+            return accepted;
         });
         frontier = parlay::flatten(next_seqs);
         all_frontiers.push_back(frontier);

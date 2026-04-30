@@ -15,8 +15,6 @@ SAM_MODEL = "facebook/sam3"
 
 
 class Segmenter:
-    """Lifts SAM3 2D masks into 3D using VGGT world points."""
-
     def __init__(
         self,
         device: str,
@@ -38,7 +36,6 @@ class Segmenter:
         text_prompt: str,
         out_dir: Path,
     ) -> tuple[List[np.ndarray], List[np.ndarray]]:
-        """Lift masks to 3D for all frames. Returns (merged_object_points, merged_object_colors)."""
         world_points = preds["world_points"]
         world_points_conf = preds["world_points_conf"]
         images = preds["images"]
