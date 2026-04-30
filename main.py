@@ -94,7 +94,7 @@ def main() -> None:
     if mode not in ("full", "seg_fill", "fill_only"):
         raise ValueError(f"input.mode must be 'full', 'seg_fill', or 'fill_only', got {mode!r}")
 
-    # ── Step 1: get construction ───────────────────────────────────────────
+    # step 1: construction
     if mode == "full":
         constructor    = Constructor(device, point_conf_threshold=conf_threshold)
         construction_dir.mkdir(parents=True, exist_ok=True)
@@ -107,7 +107,7 @@ def main() -> None:
     else:  # seg_fill | fill_only
         construction = load_construction(input_config["path"])
 
-    # ── Step 2: get segmentation ───────────────────────────────────────────
+    # step 2: segmentation
     if mode == "fill_only":
         seg_ply = segmentation_dir / "segmented_object.ply"
         if not seg_ply.exists():
@@ -130,7 +130,7 @@ def main() -> None:
         o3d.io.write_point_cloud(str(segmentation_dir / "combined_overlay.ply"), scene_pcd + obj_pcd)
         logger.info("Saved segmentation PLYs to %s", segmentation_dir)
 
-    # ── Step 3: fill ──────────────────────────────────────────────────────
+    # step 3: hole filling
     filler = Filler(
         radius=filler_config["radius"],
         color_thresh=filler_config.get("color_thresh", 0.15),

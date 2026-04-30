@@ -12,8 +12,6 @@ logger = logging.getLogger(__name__)
 BFS_BINARY = Path(__file__).parent / "bfs_expand"
 
 
-# ========== Scene index ==========
-
 
 def build_scene_index(world_points: np.ndarray, images: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     colors_hwc = images.transpose(0, 2, 3, 1)
@@ -24,8 +22,6 @@ def build_scene_index(world_points: np.ndarray, images: np.ndarray) -> tuple[np.
         colors_list.append(colors_hwc[k][valid])
     return np.concatenate(pts_list), np.concatenate(colors_list)
 
-
-# ========== Filler class ==========
 
 
 class Filler:
@@ -71,7 +67,6 @@ class Filler:
         logger.info("%d seed pts → %d pts after filling", len(seed_pts), len(exp_pts))
         return exp_pts, exp_colors
 
-    # ---- Scene preparation ----
 
     def _prepare_scene(self, scene_pts, scene_colors):
         if self.downsample:
@@ -87,7 +82,6 @@ class Filler:
             logger.info("downsample: disabled, using full scene %d pts", len(scene_pts))
         return work_pts, work_colors, full_to_work
 
-    # ---- C++ backend ----
 
     def _run_cpp(self, seed_pts, seed_colors, scene_pts, scene_colors):
         if not BFS_BINARY.exists():
@@ -130,7 +124,6 @@ class Filler:
         full_mask = np.isin(full_to_work, result_indices)
         return scene_pts[full_mask], scene_colors[full_mask]
 
-    # ---- Python backend ----
 
     def _run_python(self, seed_pts, seed_colors, scene_pts, scene_colors):
         work_pts, work_colors, full_to_work = self._prepare_scene(scene_pts, scene_colors)

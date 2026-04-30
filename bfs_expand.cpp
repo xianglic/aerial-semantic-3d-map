@@ -12,18 +12,14 @@
 
 using vertex = int32_t;
 
-// ---------------------------------------------------------------------------
-// Point layout: the flat float buffer from Python is [x, y, z, r, g, b] * N
-// ---------------------------------------------------------------------------
+// point layout: [x, y, z, r, g, b] * N
 struct Point { float x, y, z, r, g, b; };
 
 inline const Point& pt(const float* buf, vertex i) {
     return reinterpret_cast<const Point*>(buf)[i];
 }
 
-// ---------------------------------------------------------------------------
-// CSR spatial grid — read-only after build, safe for parallel queries
-// ---------------------------------------------------------------------------
+// CSR spatial grid, read-only after build
 struct Grid {
     float cell, ox, oy, oz;
     int64_t nx, ny, nz;
@@ -120,9 +116,6 @@ struct Grid {
     }
 };
 
-// ---------------------------------------------------------------------------
-// I/O helpers
-// ---------------------------------------------------------------------------
 template<typename T> void read_val(T& v) {
     if (fread(&v, sizeof(T), 1, stdin) != 1) { fprintf(stderr, "read error\n"); exit(1); }
 }
@@ -132,9 +125,6 @@ template<typename T> void read_arr(T* buf, size_t n) {
 template<typename T> void write_val(T v)                   { fwrite(&v, sizeof(T), 1, stdout); }
 template<typename T> void write_arr(const T* b, size_t n)  { fwrite(b, sizeof(T), n, stdout); }
 
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
 int main() {
     int64_t N, n_seeds, max_iters;
     double radius_d, color_thresh_d, ref_r, ref_g, ref_b;
