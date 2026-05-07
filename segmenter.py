@@ -53,8 +53,9 @@ class Segmenter:
         )
 
         logger.info(
-            "Summary | image_px=%d (%d/frame) | mask_px=%d | lifted=%s",
+            "Summary | image_px=%d (%d/frame) | scene_pts=%d | mask_px=%d | lifted=%s",
             stats["image_pixels"], stats["image_pixels"] // num_frames,
+            valid_global,
             stats["mask_px_orig"],
             f"{stats['conf_passing']:,} ({100 * stats['conf_passing'] / stats['raw_masked']:.1f}% of masked)"
             if stats["raw_masked"] else "0",
